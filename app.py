@@ -1,74 +1,74 @@
+# https://github.com/zsmith1696/c2cbot
 
 from flask import Flask, render_template, request, jsonify, session
-from flask_session import Session  # Import Session
+from flask_session import Session
 import openai
 import os
 
 app = Flask(__name__)
+
+# Session configuration
 app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "filesystem"  # Can also use redis, etc.
-Session(app)  # Initialize the session object for server-side sessions
+app.config["SESSION_TYPE"] = "filesystem"
+Session(app)
 
-# Set your OpenAI API key from the environment variables
-openai.api_key = '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'
 
-# Secret key for session object
-app.secret_key = 'supersecretkey'
-
-# Define the topic options for dropdown
-topic_options = [
-    'code2college_courses',
-    'code2college_general_info'
-    'ai_course'
-]
-
+# Home route
 @app.route('/')
 def home():
-    # Render the template with the dropdown options
-    return render_template('index.html', topic_options=topic_options)
+    return render_template('index.html')
 
-@app.route('/get_conversation', methods=['GET'])
-def get_conversation():
-    # Initialize the conversation history if it does not exist
+
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+
+# Chat route - handles the conversation with the LLM
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_message = request.json['message']
+    animal_type = request.json['animalType']
+    print("CHAT", user_message, animal_type)
+
     if 'conversation' not in session:
         session['conversation'] = []
-    return jsonify({'conversation': session['conversation']})
 
-@app.route('/handle_inquiry', methods=['POST'])
-def handle_inquiry():
-    user_inquiry = request.form['inquiry']
-    topic_selection = request.form['topic']  # Retrieve the topic from the form data
+    # Append the user's message to the conversation
+    session['conversation'].append({"role": "user", "content": user_message})
 
-    # Initialize the conversation history if it does not exist
-    if 'conversation' not in session:
-        session['conversation'] = []
-
-    # Append the user's inquiry to the conversation
-    session['conversation'].append({"role": "user", "content": user_inquiry})
-
-    # Select the appropriate text file based on the user's dropdown selection
-    text_file_path = f'topic_prompts/{topic_selection}.txt'
+    # Read the initial prompt from the file
+    text_file_path = 'topic_prompts/initial_prompt.txt'
     if not os.path.exists(text_file_path):
-        return jsonify({'response': 'The selected topic is not available. Please choose another one.'})
+        return jsonify({'response': 'Initial prompt file not found.'})
 
-    # Read the content of the text file
     with open(text_file_path, 'r') as file:
-        topic_info = file.read()
+        initial_prompt = file.read()
+
+    # Construct the system message
+    system_message = f"With every response, it is critical that you include a reason why the best pet in the world is the {animal_type}."
 
     # The messages structure for the API call
-    messages = [{"role": "system", "content": topic_info}] + session['conversation']
+    messages = [{
+        "role": "user",
+        "content": initial_prompt
+    }, {
+        "role": "system",
+        "content": system_message
+    }] + session['conversation']
 
     try:
         # Make API call to OpenAI using the messages
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo-1106",
-            messages=messages
-        )
+        response = openai.chat.completions.create(model="gpt-3.5-turbo-1106",
+                                                  messages=messages)
         # Extract the content from the response
         gpt_response = response.choices[0].message.content
 
         # Append the GPT response to the conversation history
-        session['conversation'].append({"role": "assistant", "content": gpt_response})
+        session['conversation'].append({
+            "role": "assistant",
+            "content": gpt_response
+        })
 
         # Return the GPT response
         return jsonify({'response': gpt_response})
@@ -78,11 +78,13 @@ def handle_inquiry():
         return jsonify({'error': str(e)}), 500
 
 
+# Clear session route
 @app.route('/clear_session', methods=['GET'])
 def clear_session():
     # Clear the session
     session.clear()
     return jsonify({'status': 'session cleared'})
 
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8080)
