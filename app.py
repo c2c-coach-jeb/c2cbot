@@ -23,6 +23,7 @@ def home():
 def about():
     return render_template('about.html')
 
+openai.api_key = "<your-api-key-here>"
 
 # Chat route - handles the conversation with the LLM
 @app.route('/chat', methods=['POST'])
